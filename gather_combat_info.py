@@ -80,23 +80,6 @@ class Dictionary:
 class GacUnit:
     def __init__(self, web_element: WebDriver) -> None:
         self.role: str
-        try:
-            statbar = web_element.find_element(
-                By.CLASS_NAME, 'gac-unit__bar-inner--prot')
-            statbar = statbar.get_attribute('style')
-            matching = re.search('width: (\\d+)%', statbar)
-            self.prot = matching.group(1)
-        except NoSuchElementException:
-            self.prot = -1
-
-        try:
-            statbar = web_element.find_element(
-                By.CLASS_NAME, 'gac-unit__bar-inner--hp')
-            statbar = statbar.get_attribute('style')
-            matching = re.search('width: (\\d+)%', statbar)
-            self.health = matching.group(1)
-        except NoSuchElementException:
-            self.health = -1
 
         try:
             name = web_element.find_element(
@@ -105,6 +88,25 @@ class GacUnit:
             name = web_element.find_element(
                 By.CLASS_NAME, 'ship-portrait__img')
         self.base_id = name.get_attribute('data-base-id')
+
+        if False:
+            try:
+                statbar = web_element.find_element(
+                    By.CLASS_NAME, 'gac-unit__bar-inner--prot')
+                statbar = statbar.get_attribute('style')
+                matching = re.search('width: (\\d+)%', statbar)
+                self.prot = matching.group(1)
+            except NoSuchElementException:
+                self.prot = -1
+
+            try:
+                statbar = web_element.find_element(
+                    By.CLASS_NAME, 'gac-unit__bar-inner--hp')
+                statbar = statbar.get_attribute('style')
+                matching = re.search('width: (\\d+)%', statbar)
+                self.health = matching.group(1)
+            except NoSuchElementException:
+                self.health = -1
 
 
 class GacTeam:
@@ -126,6 +128,8 @@ class GacPlayerBattle:
             self.type = 'squad'
         except NoSuchElementException:
             self.type = 'ship'
+            self.attempt = 0
+            return
 
         self.outcome = web_element.find_element(By.CLASS_NAME, "gac-summary__status")\
             .text
@@ -290,15 +294,17 @@ class SwgohGgScraper:
         if round_num > 1:  # can do, always scanning last anyway, so mimic human
             scrape_url += '?gac=' + str(self.gac_num)
             scrape_url += '&r=' + str(round_num)
-        self.driver.get(scrape_url)
-        try:
-            web_element = self.driver.find_element(
-                By.CLASS_NAME, "list-group.media-list.media-list-stream.m-t-0")
-        except NoSuchElementException:
-            web_element = False
 
-        if not web_element:
-            return False
+        page_is_loaded = False
+        while not page_is_loaded:
+            self.driver.get(scrape_url)
+            try:
+                web_element = self.driver.find_element(
+                    By.CLASS_NAME, "list-group.media-list.media-list-stream.m-t-0")
+                page_is_loaded = True
+            except NoSuchElementException:
+                logger.info('page didn\'t load, stalling a bit')
+                self.random_wait(30, 60)
 
         try:
             web_element.find_element(
@@ -312,9 +318,7 @@ class SwgohGgScraper:
 
         return gac_round
 
-    def random_wait(self):
-        wait_min = 1
-        wait_max = 3
+    def random_wait(self, wait_min=1, wait_max=1):
         time.sleep(wait_min+random.random()*(wait_max-wait_min))
 
     def load_snapped_allycodes(self):
@@ -476,7 +480,7 @@ if __name__ == "__main__":
     sh.setLevel(logging.INFO)
     sh.setFormatter(formatter)
 
-    # logger.addHandler(fh)
+    logger.addHandler(fh)
     logger.addHandler(sh)
 
     from argparse import ArgumentParser
