@@ -216,11 +216,18 @@ class SwgohGgApi:
         url = 'http://api.swgoh.gg/player/' + str(allycode) + '/'
         try:
             response = requests.get(url)
-            player = json.loads(response.text)
-            return player
         except ConnectionError:
             logger.warning('connection error while fetching %s', allycode)
             return False
+
+        try:
+            player = json.loads(response.text)
+        except json.decoder.JSONDecodeError:
+            logger.error('failed to decode response code: %s',
+                         response.status_code)
+            return False
+
+        return player
 
     def scrape_players(self, a_job) -> bool:
         query = 'select allycode from ' + a_job
@@ -275,7 +282,7 @@ class SwgohGgApi:
                 if a_datacron.save_yourself_to_db(allycode, self.gac_num, self.cursor):
                     logger.debug('datacron saved to db')
                 else:
-                    logger.error('failed to save datacron')
+                    logger.error('failed to save datacron to db')
                     is_error = True
                     break
 
@@ -631,10 +638,11 @@ class UnitStats:
                 for x in value:
                     if value[x]['gather']:
                         query += value[x]['name'] + \
-                            ' ' + value[x]['type'] + ' unsigned ,\n'
+                            ' ' + value[x]['type'] + ' unsigned not null ,\n'
             else:
                 if value['gather']:
-                    query += key + ' ' + value['type'] + ' unsigned ,\n'
+                    query += key + ' ' + \
+                        value['type'] + ' unsigned not null,\n'
 
         query += 'PRIMARY KEY (us_allycode, us_gac_num, us_unit_id)'
         query += '\n);'
@@ -706,8 +714,8 @@ def main():
 
     api = SwgohGgApi(gac_num)
 
-    print()
-    print()
+    # print()
+    # print()
     # a_datacron = Datacron(api.dc_dict)
     # print(a_datacron.get_sql_create_table())
     # unit_stats = UnitStats(api.unit_dict, api.zuo_dict)
@@ -715,8 +723,11 @@ def main():
     # input()
 
     api.scrape_players(job_table)
+    logger.info('scraping complete')
 
-    input()
+    print(
+        f'scraping complete, check db if there were any jobs omitted (codes left in {job_table}) ')
+    # input()
 
 
 if __name__ == "__main__":
@@ -731,12 +742,12 @@ if __name__ == "__main__":
     sh.setLevel(logging.INFO)
     sh.setFormatter(formatter)
 
-    # logger.addHandler(fh)
+    logger.addHandler(fh)
     logger.addHandler(sh)
 
     from argparse import ArgumentParser
     parser = ArgumentParser(
-        description='Unknown/incomplete info hash resolver')
+        description='tool to scrape players units and datacrons for further analysis')
 
     parser.add_argument('--version', action='version', version=VERSION)
     args = parser.parse_args()
