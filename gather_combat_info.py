@@ -13,15 +13,15 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+#from selenium.webdriver.support.ui import WebDriverWait
+#from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.remote.webdriver import WebDriver
 
 
 VERSION = "0.0.1"
 DRIVER_PATH = 'c:\\as_is\\chromedriver.exe'
 COOKIES_FILE = 'c:\\_programming\\python\\gac_scraper\\cookies.pkl'
-
+SPEED_OPTIMIZE_LEVEL = 10
 
 class Dictionary:
     def __init__(self, table, cursor, db_conn) -> None:
@@ -78,20 +78,25 @@ class Dictionary:
 
 
 class GacUnit:
-    def __init__(self, web_element: WebDriver) -> None:
+    def __init__(self, unit_element: WebDriver):
+        self.unit_element = unit_element
         self.role: str
+        self.base_id:str
+        self.health:int
+        self.prot:int
 
+    def reap_unit(self):
         try:
-            name = web_element.find_element(
+            name = self.unit_element.find_element(
                 By.CLASS_NAME, 'character-portrait__img')
         except NoSuchElementException:
-            name = web_element.find_element(
+            name = self.unit_element.find_element(
                 By.CLASS_NAME, 'ship-portrait__img')
         self.base_id = name.get_attribute('data-base-id')
 
-        if False:
+        if SPEED_OPTIMIZE_LEVEL < 1:
             try:
-                statbar = web_element.find_element(
+                statbar = self.unit_element.find_element(
                     By.CLASS_NAME, 'gac-unit__bar-inner--prot')
                 statbar = statbar.get_attribute('style')
                 matching = re.search('width: (\\d+)%', statbar)
@@ -100,7 +105,7 @@ class GacUnit:
                 self.prot = -1
 
             try:
-                statbar = web_element.find_element(
+                statbar = self.unit_element.find_element(
                     By.CLASS_NAME, 'gac-unit__bar-inner--hp')
                 statbar = statbar.get_attribute('style')
                 matching = re.search('width: (\\d+)%', statbar)
@@ -110,20 +115,36 @@ class GacUnit:
 
 
 class GacTeam:
-    def __init__(self, web_element: WebDriver) -> None:
+    def __init__(self, team_element: WebDriver):
+        self.team_element = team_element
         self.members = []
-        units = web_element.find_elements(By.CLASS_NAME, 'gac-unit')
-        for unit in units:
-            self.members.append(GacUnit(unit))
+
+    def reap_team(self):
+
+        unit_elements = self.team_element.find_elements(By.CLASS_NAME, 'gac-unit')
+        for unit_element in unit_elements:
+            unit = GacUnit(unit_element)
+            unit.reap_unit()
+            self.members.append(unit)
         self.members[0].role = 'leader'
         for unit in self.members[1:]:
             unit.role = 'member'
 
-
 class GacPlayerBattle:
-    def __init__(self, web_element: WebDriver) -> None:
+    def __init__(self, battle_element: WebDriver) -> None:
+        self.battle_element = battle_element
+        self.type:str
+        self.datetime:int
+        self.outcome:str
+        self.duration:int
+        self.attempt:int
+        self.attacker_team:GacTeam
+        self.defender_team:GacTeam
+        self.banners:int
+
+    def reap_battle(self):
         try:
-            _ = web_element.find_element(
+            _ = self.battle_element.find_element(
                 By.CLASS_NAME, 'character-portrait__img')
             self.type = 'squad'
         except NoSuchElementException:
@@ -131,12 +152,12 @@ class GacPlayerBattle:
             self.attempt = 0
             return
 
-        self.outcome = web_element.find_element(By.CLASS_NAME, "gac-summary__status")\
+        self.outcome = self.battle_element.find_element(By.CLASS_NAME, "gac-summary__status")\
             .text
-        self.datetime = web_element.find_element(By.CLASS_NAME, "gac-datetime")\
+        self.datetime = self.battle_element.find_element(By.CLASS_NAME, "gac-datetime")\
             .get_attribute('data-datetime')
         self.datetime = int(int(self.datetime)/1000)
-        text = web_element.find_element(By.CLASS_NAME, 'panel')\
+        text = self.battle_element.find_element(By.CLASS_NAME, 'panel')\
             .text
         matching = re.search('Length: (\\d):(\\d+)', text)
         self.duration = int(matching.group(1))*60 + int(matching.group(2))
@@ -148,19 +169,37 @@ class GacPlayerBattle:
         else:
             self.banners = 0
 
-        teams = web_element.find_elements(By.CLASS_NAME, 'gac-squad')
-        self.attacker_team = GacTeam(teams[0])
-        self.defender_team = GacTeam(teams[1])
+        teams = self.battle_element.find_elements(By.CLASS_NAME, 'gac-squad')
 
+        self.attacker_team = GacTeam(teams[0])
+        self.attacker_team.reap_team()
+        self.defender_team = GacTeam(teams[1])
+        self.defender_team.reap_team()
 
 class GacRound:
-    def __init__(self, web_element: WebDriver, allycode) -> None:
+    def __init__(self, round_element: WebDriver, allycode) -> None:
         self.attacker = allycode
+        self.battles = []
+        self.round_element = round_element
+        self.defender:int
 
-        winner = web_element.find_element(
-            By.CLASS_NAME, 'winner').get_attribute('href')
-        loser = web_element.find_element(
-            By.CLASS_NAME, 'loser').get_attribute('href')
+    def reap_round(self):
+        try:
+            winner = self.round_element.find_element(
+                By.CLASS_NAME, 'winner').get_attribute('href')
+            logger.debug('got winner element')
+        except NoSuchElementException:
+            logger.warning('could not find winner element')
+            return False
+
+        try:
+            loser = self.round_element.find_element(
+                By.CLASS_NAME, 'loser').get_attribute('href')
+            logger.debug('got loser element')
+        except NoSuchElementException:
+            logger.warning('could not get loser element')
+            return False
+
         if winner:
             enemy = winner
         elif loser:
@@ -171,17 +210,19 @@ class GacRound:
         if matching:
             self.defender = int(matching.group(1))
         else:
+            logger.critical('failed to get defender allycode from regex')
             assert False
 
-        self.battles = []
-
-        battle_elements = web_element.find_elements(
+        battle_elements = self.round_element.find_elements(
             By.CLASS_NAME, 'gac-player-battles.media.list-group-item.p-a')
 
         battle_elements.pop(0)  # first line is headline
         for battle_element in battle_elements:
-            self.battles.append(GacPlayerBattle(battle_element))
+            battle = GacPlayerBattle(battle_element)
+            battle.reap_battle()
+            self.battles.append(battle)
 
+        return True
 
 class SwgohGgScraper:
     def __init__(self, gac_num, job_table) -> None:
@@ -291,15 +332,14 @@ class SwgohGgScraper:
 
     def scrape_round(self, round_num, allycode):
         scrape_url = 'https://swgoh.gg/p/' + str(allycode) + '/gac-history/'
-        if round_num > 1:  # can do, always scanning last anyway, so mimic human
-            scrape_url += '?gac=' + str(self.gac_num)
-            scrape_url += '&r=' + str(round_num)
+        scrape_url += '?gac=' + str(self.gac_num)
+        scrape_url += '&r=' + str(round_num)
 
         page_is_loaded = False
         while not page_is_loaded:
             self.driver.get(scrape_url)
             try:
-                web_element = self.driver.find_element(
+                round_element = self.driver.find_element(
                     By.CLASS_NAME, "list-group.media-list.media-list-stream.m-t-0")
                 page_is_loaded = True
             except NoSuchElementException:
@@ -307,16 +347,18 @@ class SwgohGgScraper:
                 self.random_wait(30, 60)
 
         try:
-            web_element.find_element(
+            round_element.find_element(
                 By.CLASS_NAME, 'alert.alert-danger.text-center')
             logger.warning(
                 'error element found, player %s failed to join gac', allycode)
             gac_round = False
         except NoSuchElementException:
             # no error, we are good
-            gac_round = GacRound(web_element, allycode)
-
-        return gac_round
+            gac_round = GacRound(round_element, allycode)
+            if gac_round.reap_round():
+                return gac_round
+            else:
+                return False
 
     def random_wait(self, wait_min=1, wait_max=1):
         time.sleep(wait_min+random.random()*(wait_max-wait_min))
@@ -446,7 +488,7 @@ class SwgohGgScraper:
 
 
 def main():
-    gac_num = 113
+    gac_num = 114
     job_table = '_job_scan_player_battles'
     scraper = SwgohGgScraper(gac_num, job_table)
     driver = scraper.driver
