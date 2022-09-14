@@ -1,13 +1,17 @@
 #!/usr/bin/env python -u
 
-
 import time
+import datetime
 import re
 import os
 import sys
-import random
+from random import random
 import traceback
 import mysql.connector
+from bs4 import BeautifulSoup
+import cchardet
+#import lxml
+from bs4 import Tag
 from selenium_stealth import stealth
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -15,13 +19,16 @@ from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException
 #from selenium.webdriver.support.ui import WebDriverWait
 #from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.remote.webdriver import WebDriver
+#from selenium.webdriver.remote.webdriver import WebDriver
 
 
 VERSION = "0.0.1"
 DRIVER_PATH = 'c:\\as_is\\chromedriver.exe'
-COOKIES_FILE = 'c:\\_programming\\python\\gac_scraper\\cookies.pkl'
 SPEED_OPTIMIZE_LEVEL = 10
+CHROME_USER = 'lxmluser'
+RATE_LIMIT = 4 # 3*(1+rnd) ~~  secs per request
+
+
 
 class Dictionary:
     def __init__(self, table, cursor, db_conn) -> None:
@@ -78,50 +85,47 @@ class Dictionary:
 
 
 class GacUnit:
-    def __init__(self, unit_element: WebDriver):
+    def __init__(self, unit_element: Tag):
         self.unit_element = unit_element
         self.role: str
-        self.base_id:str
-        self.health:int
-        self.prot:int
+        self.base_id: str
+        self.health: int
+        self.prot: int
 
     def reap_unit(self):
-        try:
-            name = self.unit_element.find_element(
-                By.CLASS_NAME, 'character-portrait__img')
-        except NoSuchElementException:
-            name = self.unit_element.find_element(
-                By.CLASS_NAME, 'ship-portrait__img')
-        self.base_id = name.get_attribute('data-base-id')
+        name = self.unit_element.find(class_='character-portrait__img')
+        if not name:
+            name = self.unit_element.find(class_='ship-portrait__img')
+
+        self.base_id = name.attrs['data-base-id']
 
         if SPEED_OPTIMIZE_LEVEL < 1:
-            try:
-                statbar = self.unit_element.find_element(
-                    By.CLASS_NAME, 'gac-unit__bar-inner--prot')
-                statbar = statbar.get_attribute('style')
+            statbar = self.unit_element.find(
+                class_='gac-unit__bar-inner--prot')
+            if statbar:
+                statbar = statbar.attrs['style']
                 matching = re.search('width: (\\d+)%', statbar)
                 self.prot = matching.group(1)
-            except NoSuchElementException:
+            else:
                 self.prot = -1
 
-            try:
-                statbar = self.unit_element.find_element(
-                    By.CLASS_NAME, 'gac-unit__bar-inner--hp')
-                statbar = statbar.get_attribute('style')
+            statbar = self.unit_element.find_element(
+                class_='gac-unit__bar-inner--hp')
+            if statbar:
+                statbar = statbar.atrrs['style']
                 matching = re.search('width: (\\d+)%', statbar)
                 self.health = matching.group(1)
-            except NoSuchElementException:
+            else:
                 self.health = -1
 
 
 class GacTeam:
-    def __init__(self, team_element: WebDriver):
+    def __init__(self, team_element: Tag):
         self.team_element = team_element
         self.members = []
 
     def reap_team(self):
-
-        unit_elements = self.team_element.find_elements(By.CLASS_NAME, 'gac-unit')
+        unit_elements = self.team_element.find_all(class_='gac-unit')
         for unit_element in unit_elements:
             unit = GacUnit(unit_element)
             unit.reap_unit()
@@ -130,83 +134,90 @@ class GacTeam:
         for unit in self.members[1:]:
             unit.role = 'member'
 
+
 class GacPlayerBattle:
-    def __init__(self, battle_element: WebDriver) -> None:
+    def __init__(self, battle_element: Tag) -> None:
         self.battle_element = battle_element
-        self.type:str
-        self.datetime:int
-        self.outcome:str
-        self.duration:int
-        self.attempt:int
-        self.attacker_team:GacTeam
-        self.defender_team:GacTeam
-        self.banners:int
+        self.type: str
+        self.datetime: int
+        self.outcome: str
+        self.duration: int
+        self.attempt: int
+        self.attacker_team: GacTeam
+        self.defender_team: GacTeam
+        self.banners: int
 
     def reap_battle(self):
-        try:
-            _ = self.battle_element.find_element(
-                By.CLASS_NAME, 'character-portrait__img')
+
+        if self.battle_element.find_all(class_='character-portrait__img'):
+            # list not empty, squad battle
             self.type = 'squad'
-        except NoSuchElementException:
+        else:
             self.type = 'ship'
             self.attempt = 0
             return
 
-        self.outcome = self.battle_element.find_element(By.CLASS_NAME, "gac-summary__status")\
-            .text
-        self.datetime = self.battle_element.find_element(By.CLASS_NAME, "gac-datetime")\
-            .get_attribute('data-datetime')
+        self.outcome = self.battle_element.find(
+            class_="gac-summary__status").text
+        self.datetime = self.battle_element.find(
+            class_="gac-datetime").attrs['data-datetime']
         self.datetime = int(int(self.datetime)/1000)
-        text = self.battle_element.find_element(By.CLASS_NAME, 'panel')\
-            .text
+        text = self.battle_element.find(class_='panel').text
         matching = re.search('Length: (\\d):(\\d+)', text)
         self.duration = int(matching.group(1))*60 + int(matching.group(2))
         matching = re.search('Attempt: (\\d+)', text)
         self.attempt = int(matching.group(1))
-        if self.outcome == "WIN":
+        if self.outcome.find("WIN") >= 0:
             matching = re.search('Banners: (\\d+)', text)
             self.banners = int(matching.group(1))
-        else:
+        elif self.outcome.find("LOSS") >= 0 or \
+                self.outcome.find("TIMEOUT") >= 0 or \
+                self.outcome.find("QUIT") >= 0:
             self.banners = 0
+        else:
+            logger.critical(
+                'neither WIN nor LOSS/TIMEOUT/QUIT: %s', self.outcome)
+            assert False
 
-        teams = self.battle_element.find_elements(By.CLASS_NAME, 'gac-squad')
+        teams = self.battle_element.find_all(class_='gac-squad')
 
         self.attacker_team = GacTeam(teams[0])
         self.attacker_team.reap_team()
         self.defender_team = GacTeam(teams[1])
         self.defender_team.reap_team()
 
+
 class GacRound:
-    def __init__(self, round_element: WebDriver, allycode) -> None:
-        self.attacker = allycode
+    def __init__(self, round_element: Tag, round_data: dict) -> None:
+        self.round_data = round_data
         self.battles = []
         self.round_element = round_element
-        self.defender:int
+        self.defender: int
+        self.attacker = round_data['attacker']
 
     def reap_round(self):
         start_time = time.time()
 
-        try:
-            winner = self.round_element.find_element(
-                By.CLASS_NAME, 'winner').get_attribute('href')
-            logger.debug('got winner element')
-        except NoSuchElementException:
+        winner = self.round_element.find_all(class_="winner")
+        if not winner:  # empty list
             logger.warning('could not find winner element')
             return False
+        winner = winner[0]
+        logger.debug('got winner element')
 
-        try:
-            loser = self.round_element.find_element(
-                By.CLASS_NAME, 'loser').get_attribute('href')
-            logger.debug('got loser element')
-        except NoSuchElementException:
-            logger.warning('could not get loser element')
+        loser = self.round_element.find_all(class_='loser')
+        if not loser:  # empty list
+            logger.warning('could not find winner element')
             return False
+        loser = loser[0]
+        logger.debug('got loser element')
 
-        if winner:
-            enemy = winner
-        elif loser:
-            enemy = loser
+        if 'href' in winner.attrs:
+            enemy = winner.attrs['href']
+        elif 'href' in loser.attrs:
+            enemy = loser.attrs['href']
         else:
+            logger.critical('No href found, cant find defender allycode')
             assert False
         matching = re.search('/p/([0-9]{9})/', enemy)
         if matching:
@@ -215,8 +226,13 @@ class GacRound:
             logger.critical('failed to get defender allycode from regex')
             assert False
 
-        battle_elements = self.round_element.find_elements(
-            By.CLASS_NAME, 'gac-player-battles.media.list-group-item.p-a')
+        if self.defender not in self.round_data['snapped_allycodes']:
+            logger.info('combat : %s vs %s in round %s enemy allycode not snapped',
+                        self.round_data['attacker'], self.defender, self.round_data['round_num'])
+            return False
+
+        battle_elements = self.round_element.find_all(
+            class_='gac-player-battles')
 
         battle_elements.pop(0)  # first line is headline
         for battle_element in battle_elements:
@@ -226,13 +242,108 @@ class GacRound:
 
         reaping_time = time.time() - start_time
         if len(self.battles) > 0:
-            logger.info('reaped %s battles in %s (%s per battle)',
+            logger.debug('reaped %s battles in %s (%s per battle)',
                         len(self.battles), str(round(reaping_time, 3)),
                         str(round(reaping_time / len(self.battles), 3)))
         else:
             logger.info('reaped 0 battles in %s', str(round(reaping_time, 3)))
 
         return True
+
+
+class RateLimiter:
+    def __init__(self) -> None:
+        self.last_call = time.time()
+        self.stalls = []
+        self.rate_adjust = 0
+        self.rate_adjust_rnd = 0
+        self.stall_adjust = 0
+        self.stall_adjust_rnd = 0
+
+    def wait_rate_limit(self):
+        sleeptime = self.last_call - time.time()
+        sleeptime += RATE_LIMIT + self.rate_adjust
+        sleeptime += (RATE_LIMIT + self.rate_adjust_rnd) * random()
+
+        if sleeptime > 0:
+            time.sleep(sleeptime)
+        self.last_call = time.time()
+        if random() < 0.05: #occassionally required
+            self.recalibrate()
+
+    def recalibrate(self):
+        now = time.time()
+        last_5_min = 0
+        last_15_min = 0
+        last_h = 0
+        for stall in reversed(self.stalls):
+            if (now - stall) <= 300:
+                last_5_min += 1
+            if (now - stall) <= 900:
+                last_15_min += 1
+            if (now - stall) <= 3600:
+                last_h += 1
+            if (now - stall) > 3600:  # 1h expire time
+                self.stalls.remove(stall)
+
+        self.rate_adjust = round(
+            last_h / 60 + last_15_min / 15 + last_5_min / 5, 3)
+        self.rate_adjust_rnd = round(last_15_min/5 + last_5_min, 3)
+
+        self.stall_adjust = round(
+            last_h / 60 + last_15_min / 15 + (last_5_min - 1) * 5, 3)
+        self.stall_adjust_rnd = round(
+            last_h / 10 + last_15_min / 5 + last_5_min * 5, 3)
+
+        logger.info('recalibrated rate %s %s stalls %s %s',
+                     self.rate_adjust, self.rate_adjust_rnd,
+                     self.stall_adjust, self.stall_adjust_rnd)
+
+    def adaptative_stall(self) -> bool:
+        now = time.time()
+        self.stalls.append(now)
+        if len(self.stalls) > 30:  # deadlock? drop last 5mins and continue
+            while (now - self.stalls[-1] < 300) or (len(self.stalls) > 25):
+                self.stalls.pop(-1)
+            logger.warning(
+                'too many stalls, pruning atleast 5 last and 5 last mins')
+            return False
+        else:
+            self.recalibrate()
+            sleeptime = self.stall_adjust + self.stall_adjust_rnd * random()
+            logger.info('stalling for %s', sleeptime)
+            time.sleep(sleeptime)
+            return True
+
+class RateCounter:
+    def __init__(self) -> None:
+        self.activity_start = time.time()
+        self.requests_served = 1
+        self.requests = 1
+        self.requests_failed = 1
+        self.requests_errored = 1
+
+    def request_served(self):
+        self.requests +=1
+        self.requests_served +=1
+
+    def request_failed(self):
+        self.requests +=1
+        self.requests_failed +=1
+
+    def request_errored(self):
+        self.requests +=1
+        self.requests_errored +=1
+
+    def log_rates(self):
+        now = time.time()
+        time_passed = now - self.activity_start
+        logger.info('In %s, all %s %ss/1, served %s %ss/1, failed %s %ss/1, errored %s %ss/1 ',\
+                datetime.timedelta(seconds = time_passed),\
+                self.requests, round(time_passed/self.requests,3),\
+                self.requests_served, round(time_passed/self.requests_served,3),\
+                self.requests_failed, round(time_passed/self.requests_failed,3),\
+                self.requests_errored, round(time_passed/self.requests_errored,3))
 
 class SwgohGgScraper:
     def __init__(self, gac_num, job_table) -> None:
@@ -244,6 +355,8 @@ class SwgohGgScraper:
         self.unit_dict = Dictionary(
             'unit_dict', self.cursor, self.db_connection)
         self.gac_num = gac_num
+        self.limiter = RateLimiter()
+        self.rate_counter:RateCounter
 
     def db_connect(self):
 
@@ -266,7 +379,7 @@ class SwgohGgScraper:
     def initialize_chrome(self):
         options = Options()
         options.add_argument('--no-sandbox')
-        options.add_argument("--user-data-dir=c:\\users\\selenium")
+        options.add_argument('--user-data-dir=c:\\users\\' + CHROME_USER)
         options.add_argument("--start-maximized")
         # options.add_argument("--headless")
         options.add_experimental_option(
@@ -318,9 +431,11 @@ class SwgohGgScraper:
                     return False
 
                 if not self.upload_team_to_db(battle.attacker_team, battle_id, 'attacker'):
+                    logger.error('failed to upload attacker team to db')
                     return False
 
                 if not self.upload_team_to_db(battle.defender_team, battle_id, 'defender'):
+                    logger.error('failed to upload defender team to db')
                     return False
         return True
 
@@ -340,10 +455,11 @@ class SwgohGgScraper:
                 return False
         return True
 
-    def scrape_round(self, round_num, allycode):
-        scrape_url = 'https://swgoh.gg/p/' + str(allycode) + '/gac-history/'
+    def scrape_round(self, round_data: dict):
+        scrape_url = 'https://swgoh.gg/p/' + \
+            str(round_data['attacker']) + '/gac-history/'
         scrape_url += '?gac=' + str(self.gac_num)
-        scrape_url += '&r=' + str(round_num)
+        scrape_url += '&r=' + str(round_data['round_num'])
 
         page_is_loaded = False
         while not page_is_loaded:
@@ -352,26 +468,36 @@ class SwgohGgScraper:
                 round_element = self.driver.find_element(
                     By.CLASS_NAME, "list-group.media-list.media-list-stream.m-t-0")
                 page_is_loaded = True
+
             except NoSuchElementException:
                 logger.info('page didn\'t load, stalling a bit')
-                self.random_wait(30, 60)
+                self.rate_counter.request_failed()
+                if not self.limiter.adaptative_stall(): #no more stalling?
+                    input('no more stalling?')
+                    input('no more stalling?')
 
         try:
             round_element.find_element(
                 By.CLASS_NAME, 'alert.alert-danger.text-center')
             logger.warning(
-                'error element found, player %s failed to join gac', allycode)
+                'error element found, player %s failed to join gac', round_data['attacker'])
             gac_round = False
+            self.rate_counter.request_errored()
         except NoSuchElementException:
             # no error, we are good
-            gac_round = GacRound(round_element, allycode)
+            self.rate_counter.request_served()
+
+            whole_page = self.driver.page_source
+            soup = BeautifulSoup(whole_page, 'lxml')
+            round_element = soup.select(
+                'body > div.container.p-t-md > div.content-container >'
+                'div.content-container-primary > ul')
+
+            gac_round = GacRound(round_element[0], round_data)
             if gac_round.reap_round():
                 return gac_round
             else:
                 return False
-
-    def random_wait(self, wait_min=1, wait_max=1):
-        time.sleep(wait_min+random.random()*(wait_max-wait_min))
 
     def load_snapped_allycodes(self):
         self.snapped_allycodes = []
@@ -419,7 +545,7 @@ class SwgohGgScraper:
         # mimic human
         url = 'https://swgoh.gg/gac/leaderboard/'
         self.driver.get(url)
-        self.random_wait()
+        self.limiter.wait_rate_limit()
 
         q_del_page = 'delete from leaderboard_pages_to_scan '\
             'where page_num = %s'
@@ -450,12 +576,13 @@ class SwgohGgScraper:
                 position += 1
             self.cursor.execute(q_del_page, (page,))
             self.db_connection.commit()
-            self.random_wait()
+            self.limiter.wait_rate_limit()
 
     def scrape_players(self):
         self.load_allycodes_to_scrape()
         self.load_snapped_allycodes()
-        # self.load_unit_dictionary()
+        round_data = {'snapped_allycodes': self.snapped_allycodes}
+        self.rate_counter = RateCounter()
 
         for allycode in self.allycodes_to_scrape:
             if allycode not in self.snapped_allycodes:
@@ -464,16 +591,12 @@ class SwgohGgScraper:
 
             is_error = False
             for round_num in [1, 2, 3]:
-                self.random_wait()
-                round_outcome = self.scrape_round(round_num, allycode)
+                self.limiter.wait_rate_limit()
+                round_data['round_num'] = round_num
+                round_data['attacker'] = allycode
+                round_outcome = self.scrape_round(round_data)
                 if not round_outcome:
-                    logger.info('ally : %s in round %s has no data',
-                                allycode, round_num)
-                    continue
-
-                if round_outcome.defender not in self.snapped_allycodes:
-                    logger.info('combat : %s vs %s in round %s enemy allycode not snapped',
-                                allycode, round_outcome.defender, round_num)
+                    logger.info('%s round %s skipping', allycode, round_num)
                     continue
 
                 if not self.upload_round_to_db(round_outcome):
@@ -495,6 +618,7 @@ class SwgohGgScraper:
 
             self.db_connection.commit()
             logger.info('processed player %s', allycode)
+            self.rate_counter.log_rates()
 
 
 def main():
@@ -523,7 +647,7 @@ def main():
 if __name__ == "__main__":
     import logging
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     fh = logging.FileHandler(__name__ + '.txt')
     fh.setLevel(logging.DEBUG)
