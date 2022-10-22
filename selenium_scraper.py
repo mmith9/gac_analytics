@@ -59,8 +59,7 @@ class SwgohGgScraper:
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-software-rasterizer")
 
-        self.driver = webdriver.Chrome(
-            executable_path=DRIVER_PATH, options=options)
+        self.driver = webdriver.Chrome(options=options)
 
         stealth(self.driver,
                 languages=["en-US", "en"],

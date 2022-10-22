@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import sqlite3
+import traceback
 import mysql.connector
 
 
@@ -30,6 +31,7 @@ class MyDb:
             self.cursor = self.connection.cursor()
         except mysql.connector.Error:
             logger.critical('Connection to db failed')
+            traceback.print_exc()
             sys.exit(1)
 
     def get_info(self):
