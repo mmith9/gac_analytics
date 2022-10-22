@@ -1,4 +1,4 @@
-
+from typing import List
 import re
 import logging
 import time
@@ -46,7 +46,7 @@ class GacUnit:
 class GacTeam:
     def __init__(self, team_element: Tag):
         self.team_element = team_element
-        self.members = []
+        self.members:List[GacUnit] = []
 
     def reap_team(self):
         unit_elements = self.team_element.find_all(class_='gac-unit')
@@ -118,7 +118,7 @@ class GacPlayerBattle:
 class GacRound:
     def __init__(self, round_element: Tag, round_data: dict) -> None:
         self.round_data = round_data
-        self.battles = []
+        self.battles : List[GacPlayerBattle] = []
         self.round_element = round_element
         self.defender: int
         self.attacker = round_data['attacker']

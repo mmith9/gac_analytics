@@ -2,7 +2,9 @@ import logging
 
 import os
 import sys
+import sqlite3
 import mysql.connector
+
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +18,11 @@ class MyDb:
         mysql_database_name = "swgoh_gac"
         mysql_user = os.environ.get("mysql_user")
         mysql_password = os.environ.get("mysql_password")
+        mysql_host = os.environ.get("mysql_host")
 
         try:
             self.connection = mysql.connector.connect(
-                host='localhost',
+                host=mysql_host,
                 user=mysql_user,
                 password=mysql_password,
                 database=mysql_database_name
@@ -30,23 +33,8 @@ class MyDb:
             sys.exit(1)
 
     def get_info(self):
-        print('logger debug')
-        print('module db_objects, get_info() call')
-        print(f'__name__ is {__name__}')
-        print('got logger', logger)
-        print('testing')
-        print('logging crit')
-        logger.critical('a crit msg')
-        print('logging error')
-        logger.error('an error msg')
-        print('logging warning')
-        logger.warning('a warning msg')
-        print('logging info')
-        logger.info('an info msg')
-        print('logging debug')
-        logger.debug('a debug msg')
-        print('done testing logger')
-        logger.info('Back to work now, fetching db info')
+
+        logger.info('fetching db info')
         self.info = {}
         job_tables = ['_job_scan_units',
                       '_job_scan_battles', '_job_scan_leaderboards']
@@ -125,3 +113,102 @@ class MyDb:
         self.info['participants']['last_battle_id'] = row[0]
 
         return self.info
+
+
+class LocalDb:
+    def __init__(self) -> None:
+        self.connection: sqlite3.Connection
+        self.cursor: sqlite3.Cursor
+
+    def connect(self, filename) -> bool:
+        try:
+            self.connection = sqlite3.connect(filename)
+        except sqlite3.DatabaseError:
+            logger.critical('db connection failed')
+            return False
+
+        self.cursor = self.connection.cursor()
+        return True
+
+    def copy_scrape_jobs(self, my_db: MyDb):
+        query = 'select id, allycode, gac_num from _job_scan_battles order by id'
+        my_db.cursor.execute(query)
+        rows = my_db.cursor.fetchall()
+        gac_num = rows[0][2]
+        query = 'insert or ignore into local_job_scan_battles values (?, ?, ?)'
+        self.cursor.executemany(query, rows)
+        self.connection.commit()
+
+        query = 'select unit_id, name, base_id, image_url from unit_dict'
+        my_db.cursor.execute(query)
+        rows = my_db.cursor.fetchall()
+        query = 'insert or ignore into unit_dict values (?, ?, ?, ?) '
+        self.cursor.executemany(query, rows)
+        self.connection.commit()
+
+        query = 'select distinct us_allycode, us_gac_num from unit_stats '\
+                'where us_gac_num = %s'
+        my_db.cursor.execute(query, (gac_num,))
+        rows = my_db.cursor.fetchall()
+        query = 'insert or ignore into local_snapped_allycodes values (?, ?) '
+        self.cursor.executemany(query, rows)
+        self.connection.commit()
+
+    def initialize_db(self):
+
+        for table in ['local_jobs_completed', 'local_job_scan_battles',
+                      'local_snapped_allycodes', 'local_battles', 'unit_dict']:
+            query = 'drop table ' + table
+            try:
+                self.cursor.execute(query)
+                self.connection.commit()
+            except sqlite3.DatabaseError as error:
+                logger.info('error on drop table %s', error)
+
+        query = 'create table local_jobs_completed ('
+        query += 'id integer primary key autoincrement, '
+        query += 'allycode int unsigned not null, '
+        query += 'gac_num int unsigned not null)'
+        self.cursor.execute(query)
+
+        query = 'create table local_job_scan_battles ('
+        query += 'id int unsigned not null primary key, '
+        query += 'allycode int unsigned not null, '
+        query += 'gac_num int unsigned not null)'
+        self.cursor.execute(query)
+
+        query = 'create table local_snapped_allycodes ('
+        query += 'allycode int unsigned not null, '
+        query += 'gac_num int unsigned not null)'
+        self.cursor.execute(query)
+
+        query = '''
+            CREATE TABLE `local_battles` (
+            `battle_id` integer PRIMARY KEY AUTOINCREMENT,
+            `attacker` int unsigned not null,
+            `defender` int unsigned not null,
+            `banners` tinyint unsigned not null,
+            `bt_date` int unsigned not null,
+            `duration` smallint unsigned not null,
+            `bt_gac_num` smallint unsigned not null,
+            `a1` smallint unsigned not null,
+            `a2` smallint unsigned not null,
+            `a3` smallint unsigned not null,
+            `a4` smallint unsigned not null,
+            `a5` smallint unsigned not null,
+            `d1` smallint unsigned not null,
+            `d2` smallint unsigned not null,
+            `d3` smallint unsigned not null,
+            `d4` smallint unsigned not null,
+            `d5` smallint unsigned not null
+            )'''
+        self.cursor.execute(query)
+
+        query = '''
+            CREATE TABLE `unit_dict` (
+            `unit_id` smallint unsigned PRIMARY KEY,
+            `name` varchar(255),
+            `base_id` varchar(255),
+            `image_url` varchar(255)
+            )'''
+        self.cursor.execute(query)

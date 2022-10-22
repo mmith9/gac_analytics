@@ -32,27 +32,29 @@ def main():
 
 
     logger.debug('main proc started')
-    gac_num = 116
+    gac_num = 119
 
     logger.debug('connecting to db')
     my_db = db_objects.MyDb()
     my_db.connect()
     logger.debug('fetching info from db')
-    info = my_db.get_info()
 
     print(f'Defined now: Gac number {gac_num}')
 
     pprint = PrettyPrinter()
+    info = my_db.get_info()
     pprint.pprint(info)
 
     print('1 prepare jobs: scan leaderboards')
-    print('2 execute jobs: scan leaderboards')
+    print('2 execute')
     print()
     print('3 prepare jobs: scan units')
-    print('4 execute jobs: scan units')
+    print('4 execute')
     print()
     print('5 prepare jobs: scan player battles')
     print('6 execute')
+
+    print('0 : update gac events table')
 
     task_number = input('Task number?')
 
@@ -80,23 +82,13 @@ def main():
         selenium_scraper = SwgohGgScraper(my_db, gac_num)
         selenium_scraper.scrape_battles()
 
+    if task_number == '0':
+        print('foo')
+        api_scraper = SwgohGgApi(my_db, gac_num)
+        api_scraper.scrape_gac_events()
+
 
 if __name__ == "__main__":
-    # logger = logging.getLogger()
-    # logger.setLevel(logging.DEBUG)
-
-    # formatter = logging.Formatter('%(asctime)s -N %(name)s -M %(module)s -L %(levelname)s - %(message)s')
-    # fh = logging.FileHandler(__name__ + '.txt')
-    # fh.setLevel(logging.DEBUG)
-    # fh.setFormatter(formatter)
-    # sh = logging.StreamHandler()
-    # sh.setLevel(logging.INFO)
-    # sh.setFormatter(formatter)
-
-    # logger.addHandler(fh)
-    # logger.addHandler(sh)
-
-
     from argparse import ArgumentParser
     parser = ArgumentParser(
         description='Unknown/incomplete info hash resolver')
@@ -109,4 +101,3 @@ if __name__ == "__main__":
     end = time.time()
     total_time = end - start
     print("\nExecution time: " + str(total_time))
-

@@ -3,6 +3,7 @@ import traceback
 import sys
 import re
 import time
+import sqlite3
 import mysql.connector
 
 from bs4 import BeautifulSoup
@@ -24,7 +25,8 @@ from constant_data import DIVISIONS
 from constant_data import LEAGUES
 
 from gac_dictionaries import Dictionary
-from gac_objects import GacRound
+from gac_objects import GacRound, GacTeam
+
 from db_objects import MyDb
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,7 @@ class SwgohGgScraper:
         self.gac_generate_num = gac_num
         self.rate_limiter: throttling.RateLimiter
         self.rate_counter: throttling.RateCounter
+        self.current_gac_num=-1
 
     def initialize_chrome(self):
         options = Options()
@@ -79,6 +82,21 @@ class SwgohGgScraper:
             return False
         return True
 
+    def remove_used_allycode_slave(self, allycode) -> bool:
+        query = 'delete from local_job_scan_battles'
+        query += ' where allycode = ? '
+        try:
+            self.cursor.execute(query, (int(allycode),))  # one element tuple
+        except sqlite3.DatabaseError:
+            logger.error('failed to remove used allycode from job table')
+            traceback.print_exc()
+            return False
+
+        query = 'insert into local_jobs_completed (allycode, gac_num) '
+        query+= 'values (?, ?)'
+        self.cursor.execute(query, (allycode, self.current_gac_num))
+        return True
+
     def upload_round_to_db(self, a_round: GacRound) -> bool:
         attacker = int(a_round.attacker)
         defender = int(a_round.defender)
@@ -104,6 +122,51 @@ class SwgohGgScraper:
                 if not self.upload_team_to_db(battle.defender_team, battle_id, 'defender'):
                     logger.error('failed to upload defender team to db')
                     return False
+        return True
+
+    def upload_round_to_db_slave(self, a_round: GacRound) -> bool:
+        attacker = int(a_round.attacker)
+        defender = int(a_round.defender)
+        battles_uploaded = 0
+        for battle in a_round.battles:
+            if battle.type == 'squad' and battle.attempt == 1:
+                query = 'insert into local_battles '\
+                        '(attacker, defender, banners, bt_date, duration, bt_gac_num, '\
+                        ' d1,d2,d3,d4,d5,a1,a2,a3,a4,a5) '\
+                        'values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+
+                an_insert = [attacker, defender, battle.banners,battle.datetime,\
+                             battle.duration, a_round.gac_num]
+                units = [0 for _i in range(0,10)]
+
+                units[0]=self.unit_dict.to_int(battle.defender_team.members[0].base_id)
+                members:GacTeam = sorted(battle.defender_team.members[1:],\
+                         key=lambda unit: self.unit_dict.to_int(unit.base_id))
+                i=1
+                for unit in members:
+                    unit_id = self.unit_dict.to_int(unit.base_id)
+                    units[i] = unit_id
+                    i+=1
+
+                units[5]=units[0]=self.unit_dict.to_int(battle.attacker_team.members[0].base_id)
+                members:GacTeam = sorted(battle.attacker_team.members[1:],\
+                         key=lambda unit: self.unit_dict.to_int(unit.base_id))
+                i=6
+                for unit in members:
+                    unit_id = self.unit_dict.to_int(unit.base_id)
+                    units[i] = unit_id
+                    i+=1
+
+                an_insert+= units
+
+                try:
+                    self.cursor.execute(query, an_insert)
+                    battles_uploaded+=1
+                except sqlite3.DatabaseError:
+                    logger.error('failed to upload battle to db')
+                    traceback.print_exc()
+                    return False
+        logger.debug('Uploaded %s battles to db', battles_uploaded)
         return True
 
     def upload_team_to_db(self, team, battle_id, side) -> bool:
@@ -179,6 +242,7 @@ class SwgohGgScraper:
 
     def load_snapped_allycodes(self, current_gac_num):
         self.snapped_allycodes = []
+
         query = 'select distinct us_allycode from unit_stats '\
                 'where us_gac_num = %s'
         try:
@@ -195,8 +259,46 @@ class SwgohGgScraper:
             self.snapped_allycodes.append(row[0])
         return True
 
+    def load_snapped_allycodes_slave(self, current_gac_num):
+
+        self.snapped_allycodes = []
+        query = 'select distinct allycode from local_snapped_allycodes '\
+                'where gac_num = ?'
+        try:
+            self.cursor.execute(query, (current_gac_num,))
+            rows = self.cursor.fetchall()
+        except sqlite3.DatabaseError:
+            logger.error('failed to load snapped allycodes for gac_num %s', current_gac_num)
+            traceback.print_exc()
+            sys.exit(1)
+        if not rows:
+            logger.error(
+                'no snapped allycodes at all for gac_num %s', current_gac_num)
+            sys.exit(1)
+        for row in rows:
+            self.snapped_allycodes.append(row[0])
+        return True
+
     def load_jobs_to_scrape(self):
         query = 'select allycode, gac_num from _job_scan_battles order by id'
+        try:
+            self.cursor.execute(query)
+            rows = self.cursor.fetchall()
+        except mysql.connector.Error:
+            logger.critical('failed to load jobs to scrape')
+            sys.exit(1)
+
+        if not rows:
+            logger.warning('job list is empty')
+            sys.exit(1)
+
+        self.jobs_to_scrape = []
+        for row in rows:
+            job = {'allycode':row[0], 'gac_num':row[1]}
+            self.jobs_to_scrape.append(job)
+
+    def load_jobs_to_scrape_slave(self):
+        query = 'select allycode, gac_num from local_job_scan_battles order by id'
         try:
             self.cursor.execute(query)
             rows = self.cursor.fetchall()
@@ -299,6 +401,22 @@ class SwgohGgScraper:
             self.rate_counter.log_rates()
 
     def scrape_battles(self):
+        # print('logger debug')
+        # print(f'__name__ is {__name__}')
+        # print('got logger', logger)
+        # print('testing')
+        # print('logging crit')
+        # logger.critical('a crit msg')
+        # print('logging error')
+        # logger.error('an error msg')
+        # print('logging warning')
+        # logger.warning('a warning msg')
+        # print('logging info')
+        # logger.info('an info msg')
+        # print('logging debug')
+        # logger.debug('a debug msg')
+        # print('done testing logger')
+
         self.load_jobs_to_scrape()
         assert self.jobs_to_scrape[0]['gac_num'] == self.jobs_to_scrape[-1]['gac_num']
 
@@ -422,3 +540,53 @@ class SwgohGgScraper:
 
         self.cursor.execute(query)
         self.db_connection.commit()
+
+    def scrape_battles_slave(self):
+
+        self.load_jobs_to_scrape_slave()
+        assert self.jobs_to_scrape[0]['gac_num'] == self.jobs_to_scrape[-1]['gac_num']
+        self.current_gac_num = self.jobs_to_scrape[0]['gac_num']
+        self.load_snapped_allycodes_slave(self.current_gac_num)
+        round_data = {'snapped_allycodes': self.snapped_allycodes}
+        self.rate_counter = throttling.RateCounter()
+        self.rate_limiter = throttling.RateLimiter(5)
+
+        self.driver.get('http://swgoh.gg')
+        input('Hit enter when ready')
+        for job in self.jobs_to_scrape:
+            if job['allycode'] not in self.snapped_allycodes:
+                logger.warning('%s allycode not snapped', job['allycode'])
+                continue
+
+            is_error = False
+            for round_num in [1, 2, 3]:
+                #input('Hit enter when ready')
+                self.rate_limiter.wait_rate_limit()
+                round_data['gac_num'] = job['gac_num']
+                round_data['round_num'] = round_num
+                round_data['attacker'] = job['allycode']
+                round_outcome = self.scrape_round(round_data)
+                if not round_outcome:
+                    logger.info('%s round %s skipping', job['allycode'], round_num)
+                    continue
+
+                if not self.upload_round_to_db_slave(round_outcome):
+                    logger.error('failed to upload combat : %s vs %s in round %s to db',
+                                 job['allycode'], round_outcome.defender, round_num)
+                    is_error = True
+                    break
+
+                logger.info('uploaded %s vs %s round %s to db',
+                            job['allycode'], round_outcome.defender, round_num)
+            if is_error:
+                self.db_connection.rollback()
+                continue
+
+            if not self.remove_used_allycode_slave(job['allycode']):
+                logger.error(
+                    'failed to remove allycode %s from job list', job['allycode'])
+                self.db_connection.rollback()
+
+            self.db_connection.commit()
+            logger.info('processed player %s', job['allycode'])
+            self.rate_counter.log_rates()

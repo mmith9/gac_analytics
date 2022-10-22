@@ -1,6 +1,7 @@
-
+import sys
 import json
 import logging
+import re
 import traceback
 import requests
 import mysql.connector
@@ -132,6 +133,8 @@ class SwgohGgApi:
             self.db_connection.commit()
             logger.info('scraping of player %s complete', job['allycode'])
             self.rate_counter.log_rates()
+        return True
+
 
     def prepare_jobs_scan_units(self):
         query = 'truncate table _job_scan_units'
@@ -143,3 +146,47 @@ class SwgohGgApi:
 
         self.cursor.execute(query)
         self.db_connection.commit()
+
+    def scrape_gac_events(self):
+        print('bar')
+        query = 'select ge_id, swgohgg_gac_season, swgohgg_gac_num, '
+        query+= '    cg_event_id, cg_territory_map_id, cg_base_id '
+        query+= 'from gac_events where cg_base_id is null'
+
+        self.cursor.execute(query)
+        db_rows = self.cursor.fetchall()
+        logger.debug('loaded %s rows from db', len(db_rows))
+
+        url = 'http://api.swgoh.gg/gac/events/'
+        try:
+            response = requests.get(url)
+        except mysql.connector.Error:
+            logger.critical(
+                'failed to get events from api.swgoh.gg/gac/events')
+            sys.exit(1)
+        try:
+            gac_events = json.loads(response.text)
+        except UnicodeDecodeError:
+            logger.critical('failed to decode json object')
+            sys.exit(1)
+        logger.debug('loaded %s gac objects from api', len(gac_events))
+
+        for row in db_rows:
+            gac_id = row[0]
+            gac_season = row[1]
+
+            pattern = r'CHAMPIONSHIPS_GRAND_ARENA_GA2_EVENT_SEASON_([0-9]+)'
+            for item in gac_events:
+                matching = re.search(pattern, item['game_event']['base_id'])
+                if matching:
+
+                    if gac_season == int(matching.group(1)):
+                        query = 'update gac_events set '
+                        query += 'cg_base_id = %s, cg_territory_map_id = %s '
+                        query += 'where ge_id = %s'
+
+                        self.cursor.execute(\
+                            query,
+                            (item['base_id'],item['game_event']['territory_map_id'], gac_id))
+                        self.db_connection.commit()
+                        break

@@ -94,7 +94,7 @@ class RateCounter:
 
     def log_rates(self):
         now = time.time()
-        time_passed = int(now - self.activity_start)
+        time_passed = now - self.activity_start
 
         info = 'T: ' + str(datetime.timedelta(seconds=time_passed))
 
