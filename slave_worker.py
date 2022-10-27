@@ -1,9 +1,13 @@
-#!/usr/bin/env python -u
+#!/usr/bin/env python
 
 import time
 import logging
 import logging.config
 #from pprint import PrettyPrinter
+from pyvirtualdisplay import Display
+
+display = Display(visible=0, size=(800, 600))
+display.start()
 
 from constant_data import VERSION
 from selenium_scraper import SwgohGgScraper
@@ -47,7 +51,7 @@ if __name__ == "__main__":
 
     from argparse import ArgumentParser
     parser = ArgumentParser(
-        description='Unknown/incomplete info hash resolver')
+        description='slave worker for selenium on raspberry')
 
     parser.add_argument('--version', action='version', version=VERSION)
     args = parser.parse_args()

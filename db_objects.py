@@ -57,11 +57,13 @@ class MyDb:
         query_gac_num = 'select min(gac_num), max(gac_num) from '
 
         for tablename in job_tables:
+            logger.debug('Querying: %s', query_jobs + tablename)
             self.cursor.execute(query_jobs + tablename)
             rows = self.cursor.fetchall()
             self.info[tablename]['jobs'] = rows[0][0]
 
             if 'gac_num_name' in self.info[tablename]:
+                logger.debug('Querying: %s', query_gac_num + tablename)
                 self.cursor.execute(query_gac_num + tablename)
                 rows = self.cursor.fetchall()
                 row = rows[0]
@@ -75,6 +77,7 @@ class MyDb:
                 query_last_gac_num = 'select max(' + \
                     self.info[tablename]['gac_num_name']
                 query_last_gac_num += ') from ' + tablename
+                logger.debug('Querying: %s', query_last_gac_num)
                 self.cursor.execute(query_last_gac_num)
                 rows = self.cursor.fetchall()
                 row = rows[0]
@@ -87,7 +90,7 @@ class MyDb:
                         self.info[tablename]['gac_num_name']
                     query_last_gac_entries += ' = ' + \
                         str(self.info[tablename]['last_gac_num'])
-
+                    logger.debug('Querying: %s', query_last_gac_entries)
                     self.cursor.execute(query_last_gac_entries)
                     rows = self.cursor.fetchall()
                     row = rows[0]
@@ -96,6 +99,7 @@ class MyDb:
                 query_all_gac_nums = 'select distinct ' + \
                     self.info[tablename]['gac_num_name']
                 query_all_gac_nums += ' from ' + tablename
+                logger.debug('Querying: %s', query_all_gac_nums)
                 self.cursor.execute(query_all_gac_nums)
                 rows = self.cursor.fetchall()
                 self.info[tablename]['all_gac_nums'] = []
@@ -103,12 +107,14 @@ class MyDb:
                     self.info[tablename]['all_gac_nums'].append(row[0])
 
         query_battle_id = 'select max(battle_id) from battles'
+        logger.debug('Querying: %s', query_battle_id)
         self.cursor.execute(query_battle_id)
         rows = self.cursor.fetchall()
         row = rows[0]
         self.info['battles']['last_battle_id'] = row[0]
 
         query_battle_id = 'select max(pcp_battle_id) from participants'
+        logger.debug('Querying: %s', query_battle_id)
         self.cursor.execute(query_battle_id)
         rows = self.cursor.fetchall()
         row = rows[0]

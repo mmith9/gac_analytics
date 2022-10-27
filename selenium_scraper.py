@@ -58,6 +58,9 @@ class SwgohGgScraper:
         options.add_argument("--disable-blink-features=AutomationControlled")
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-software-rasterizer")
+        options.add_argument("--disable-gl-drawing-for-tests")
+        options.add_argument("--disable-renderer-accessibility")
+        
 
         self.driver = webdriver.Chrome(options=options)
 
@@ -548,7 +551,7 @@ class SwgohGgScraper:
         self.load_snapped_allycodes_slave(self.current_gac_num)
         round_data = {'snapped_allycodes': self.snapped_allycodes}
         self.rate_counter = throttling.RateCounter()
-        self.rate_limiter = throttling.RateLimiter(5)
+        self.rate_limiter = throttling.RateLimiter(0)
 
         self.driver.get('http://swgoh.gg')
         input('Hit enter when ready')

@@ -22,6 +22,7 @@ class RateLimiter:
         sleeptime += (self.initial_rate + self.rate_adjust_rnd) * random()
 
         if sleeptime > 0:
+            logger.debug('sleeping for %s', sleeptime)
             time.sleep(sleeptime)
         self.last_call = time.time()
         if random() < 0.05:  # occassionally required
@@ -67,7 +68,7 @@ class RateLimiter:
         else:
             self.recalibrate()
             sleeptime = self.stall_adjust + self.stall_adjust_rnd * random()
-            logger.info('stalling for %s', sleeptime)
+            logger.info('adaptative stalling for %s', sleeptime)
             time.sleep(sleeptime)
             return True
 
