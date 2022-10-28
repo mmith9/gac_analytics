@@ -4,6 +4,8 @@ import logging
 import time
 from bs4 import Tag
 
+from datacron_v2 import DatacronV2
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,7 +48,8 @@ class GacUnit:
 class GacTeam:
     def __init__(self, team_element: Tag):
         self.team_element = team_element
-        self.members:List[GacUnit] = []
+        self.members: List[GacUnit] = []
+        self.datacron: DatacronV2
 
     def reap_team(self):
         unit_elements = self.team_element.find_all(class_='gac-unit')
@@ -57,6 +60,12 @@ class GacTeam:
         self.members[0].role = 'leader'
         for unit in self.members[1:]:
             unit.role = 'member'
+        dc_element = self.team_element.find(class_='gac-squad__datacron')
+        if dc_element:
+            self.datacron = DatacronV2()
+            self.datacron.reap_from(dc_element)
+        else:
+            self.datacron = False
 
 
 class GacPlayerBattle:
@@ -118,7 +127,7 @@ class GacPlayerBattle:
 class GacRound:
     def __init__(self, round_element: Tag, round_data: dict) -> None:
         self.round_data = round_data
-        self.battles : List[GacPlayerBattle] = []
+        self.battles: List[GacPlayerBattle] = []
         self.round_element = round_element
         self.defender: int
         self.attacker = round_data['attacker']

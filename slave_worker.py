@@ -4,10 +4,10 @@ import time
 import logging
 import logging.config
 #from pprint import PrettyPrinter
-from pyvirtualdisplay import Display
 
-display = Display(visible=0, size=(800, 600))
-display.start()
+#from pyvirtualdisplay import Display
+#display = Display(visible=0, size=(800, 600))
+#display.start()
 
 from constant_data import VERSION
 from selenium_scraper import SwgohGgScraper

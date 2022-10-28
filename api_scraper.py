@@ -5,6 +5,7 @@ import re
 import traceback
 import requests
 import mysql.connector
+import urllib3
 
 import throttling
 from gac_dictionaries import DictionaryPlus
@@ -39,9 +40,14 @@ class SwgohGgApi:
         url = 'http://api.swgoh.gg/player/' + str(allycode) + '/'
         try:
             response = requests.get(url)
-        except ConnectionError:
-            logger.warning('connection error while fetching %s', allycode)
+        except (ConnectionError, ConnectionResetError, 
+                urllib3.exceptions.ProtocolError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.ChunkedEncodingError) as err:
+            logger.warning('connection error %s while fetching %s', err, allycode)
+            traceback.print_exc()
             self.rate_counter.request_errored()
+            #self.rate_limiter.adaptative_stall()
             return False
 
         try:

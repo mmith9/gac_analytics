@@ -42,6 +42,8 @@ class AllUnitStats:
         self.stats[40] = {'name': 'special_ca',
                           'type': 'float', 'gather': False}
 
+        
+
         self.misc = {}
         self.misc['us_id'] = {'type': 'int', 'gather': True}
         self.misc['us_allycode'] = {'type': 'int', 'gather': True}
@@ -88,3 +90,5 @@ class AllUnitStats:
         for _, value in self.stats.items():
             if value['gather']:
                 print('  ', value['name'], value['type'])
+
+

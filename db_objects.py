@@ -5,7 +5,7 @@ import sys
 import sqlite3
 import traceback
 import mysql.connector
-
+from datacron_v2 import DatacronV2
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +154,13 @@ class LocalDb:
         self.cursor.executemany(query, rows)
         self.connection.commit()
 
+        query = 'select dc_mc_id, mc_string from dc_mechanics_dict'
+        my_db.cursor.execute(query)
+        rows = my_db.cursor.fetchall()
+        query = 'insert or ignore into dc_mechanics_dict values (?, ?) '
+        self.cursor.executemany(query, rows)
+        self.connection.commit()
+
         query = 'select distinct us_allycode, us_gac_num from unit_stats '\
                 'where us_gac_num = %s'
         my_db.cursor.execute(query, (gac_num,))
@@ -165,7 +172,7 @@ class LocalDb:
     def initialize_db(self):
 
         for table in ['local_jobs_completed', 'local_job_scan_battles',
-                      'local_snapped_allycodes', 'local_battles', 'unit_dict']:
+                      'local_snapped_allycodes', 'local_battles', 'unit_dict', 'datacrons_v2', 'dc_mechanics_dict']:
             query = 'drop table ' + table
             try:
                 self.cursor.execute(query)
@@ -193,6 +200,8 @@ class LocalDb:
         query = '''
             CREATE TABLE `local_battles` (
             `battle_id` integer PRIMARY KEY AUTOINCREMENT,
+            `attacker_dc_id` int,
+            `defender_dc_id` int,
             `attacker` int unsigned not null,
             `defender` int unsigned not null,
             `banners` tinyint unsigned not null,
@@ -219,4 +228,16 @@ class LocalDb:
             `base_id` varchar(255),
             `image_url` varchar(255)
             )'''
+        self.cursor.execute(query)
+
+        query = '''
+            CREATE TABLE `dc_mechanics_dict` (
+            `dc_mc_id` integer PRIMARY KEY AUTOINCREMENT,
+            `mc_string` text
+            )'''
+        self.cursor.execute(query)
+
+        dc = DatacronV2()
+        query = dc.get_sql_create_table(dbtype='sqlite')
+        print(query)
         self.cursor.execute(query)

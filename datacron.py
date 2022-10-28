@@ -4,6 +4,8 @@ import mysql.connector
 from gac_dictionaries import DictionaryPlus
 
 logger = logging.getLogger(__name__)
+from pprint import PrettyPrinter
+pp=PrettyPrinter()
 
 class Datacron:
     def __init__(self, dc_dict: DictionaryPlus) -> None:
@@ -69,7 +71,7 @@ class Datacron:
 
         dco = self.datacron_object  # abbr
         # don't save crap
-        if dco['tier'] == 0:
+        if dco['tier'] < 3:
             return False
 
         self.level = dco['tier']
@@ -120,6 +122,10 @@ class Datacron:
             logger.debug('datacron inserted')
         except mysql.connector.Error:
             logger.error('insert datacron into table failed')
+            pp.pprint(self.level)
+            pp.pprint(self.stats)
+            pp.pprint(self.abilities)
             traceback.print_exc()
             return False
         return True
+

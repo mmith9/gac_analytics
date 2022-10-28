@@ -41,7 +41,7 @@ class RateLimiter:
             if (now - stall) <= 3600:
                 last_h += 1
             if (now - stall) > 3600:  # 1h expire time
-                self.stalls.remove(stall)
+                self.stalls.pop(-1)
 
         self.rate_adjust = round(
             last_h / 60 + last_15_min / 15 + last_5_min / 5, 3)
@@ -59,11 +59,11 @@ class RateLimiter:
     def adaptative_stall(self) -> bool:
         now = time.time()
         self.stalls.append(now)
-        if len(self.stalls) > 30:  # deadlock? drop last 5mins and continue
-            while (now - self.stalls[-1] < 300) or (len(self.stalls) > 25):
+        if len(self.stalls) > 60:  # deadlock? drop last 5mins and continue
+            while (now - self.stalls[-1] < 900) or (len(self.stalls) > 30):
                 self.stalls.pop(-1)
             logger.warning(
-                'too many stalls, pruning atleast 5 last and 5 last mins')
+                'too many stalls, pruning atleast 30 last and 15 last mins')
             return False
         else:
             self.recalibrate()

@@ -20,7 +20,7 @@ from selenium.common.exceptions import WebDriverException
 
 import throttling
 from constant_data import CHROME_USER
-from constant_data import DRIVER_PATH
+#from constant_data import DRIVER_PATH
 from constant_data import DIVISIONS
 from constant_data import LEAGUES
 
@@ -41,6 +41,8 @@ class SwgohGgScraper:
         self.snapped_allycodes: list
         self.unit_dict = Dictionary(
             'unit_dict', self.cursor, self.db_connection)
+        self.dc_dict = Dictionary(
+            'dc_mechanics_dict',self.cursor, self.db_connection)
         self.gac_generate_num = gac_num
         self.rate_limiter: throttling.RateLimiter
         self.rate_counter: throttling.RateCounter
@@ -131,43 +133,70 @@ class SwgohGgScraper:
         defender = int(a_round.defender)
         battles_uploaded = 0
         for battle in a_round.battles:
-            if battle.type == 'squad' and battle.attempt == 1:
-                query = 'insert into local_battles '\
-                        '(attacker, defender, banners, bt_date, duration, bt_gac_num, '\
-                        ' d1,d2,d3,d4,d5,a1,a2,a3,a4,a5) '\
-                        'values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            if battle.type != 'squad' or battle.attempt!=1:
+                continue
+        
+            if battle.attacker_team.datacron:
+                attacker_dc_id=battle.attacker_team.datacron.\
+                    save_yourself_to_db(self.cursor, self.dc_dict, 'sqlite')
+            else:
+                attacker_dc_id=False
 
-                an_insert = [attacker, defender, battle.banners,battle.datetime,\
-                             battle.duration, a_round.gac_num]
-                units = [0 for _i in range(0,10)]
+            if battle.defender_team.datacron:
+                defender_dc_id=battle.defender_team.datacron.\
+                    save_yourself_to_db(self.cursor, self.dc_dict, 'sqlite')
+            else:
+                defender_dc_id=False
 
-                units[0]=self.unit_dict.to_int(battle.defender_team.members[0].base_id)
-                members:GacTeam = sorted(battle.defender_team.members[1:],\
-                         key=lambda unit: self.unit_dict.to_int(unit.base_id))
-                i=1
-                for unit in members:
-                    unit_id = self.unit_dict.to_int(unit.base_id)
-                    units[i] = unit_id
-                    i+=1
+            an_insert = [attacker, defender, battle.banners,battle.datetime,\
+                            battle.duration, a_round.gac_num]
 
-                units[5]=units[0]=self.unit_dict.to_int(battle.attacker_team.members[0].base_id)
-                members:GacTeam = sorted(battle.attacker_team.members[1:],\
-                         key=lambda unit: self.unit_dict.to_int(unit.base_id))
-                i=6
-                for unit in members:
-                    unit_id = self.unit_dict.to_int(unit.base_id)
-                    units[i] = unit_id
-                    i+=1
+            query = 'insert into local_battles '\
+                    '(attacker, defender, banners, bt_date, duration, bt_gac_num, '
 
-                an_insert+= units
+            if attacker_dc_id:
+                query+= 'attacker_dc_id, '
+                an_insert.append(attacker_dc_id)
+            if defender_dc_id:
+                query+= 'defender_dc_id, '
+                an_insert.append(defender_dc_id)
+            query+='d1,d2,d3,d4,d5,a1,a2,a3,a4,a5'
+            query+=' ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?'
+            if attacker_dc_id:
+                query+= ', ?'
+            if defender_dc_id:
+                query+= ', ?'
+            query+=')'
 
-                try:
-                    self.cursor.execute(query, an_insert)
-                    battles_uploaded+=1
-                except sqlite3.DatabaseError:
-                    logger.error('failed to upload battle to db')
-                    traceback.print_exc()
-                    return False
+            units = [0 for _i in range(0,10)]
+
+            units[0]=self.unit_dict.to_int(battle.defender_team.members[0].base_id)
+            members:GacTeam = sorted(battle.defender_team.members[1:],\
+                        key=lambda unit: self.unit_dict.to_int(unit.base_id))
+            i=1
+            for unit in members:
+                unit_id = self.unit_dict.to_int(unit.base_id)
+                units[i] = unit_id
+                i+=1
+
+            units[5]=units[0]=self.unit_dict.to_int(battle.attacker_team.members[0].base_id)
+            members:GacTeam = sorted(battle.attacker_team.members[1:],\
+                        key=lambda unit: self.unit_dict.to_int(unit.base_id))
+            i=6
+            for unit in members:
+                unit_id = self.unit_dict.to_int(unit.base_id)
+                units[i] = unit_id
+                i+=1
+
+            an_insert+= units
+
+            try:
+                self.cursor.execute(query, an_insert)
+                battles_uploaded+=1
+            except sqlite3.DatabaseError:
+                logger.error('failed to upload battle to db')
+                traceback.print_exc()
+                return False
         logger.debug('Uploaded %s battles to db', battles_uploaded)
         return True
 
