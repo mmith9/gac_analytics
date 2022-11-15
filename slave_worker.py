@@ -3,16 +3,21 @@
 import time
 import logging
 import logging.config
+import platform
 #from pprint import PrettyPrinter
-
-#from pyvirtualdisplay import Display
-#display = Display(visible=0, size=(800, 600))
-#display.start()
 
 from constant_data import VERSION
 from selenium_scraper import SwgohGgScraper
 #from api_scraper import SwgohGgApi
 import db_objects
+
+
+if platform.system() == 'Linux':
+    from pyvirtualdisplay import Display
+    display = Display(visible=0, size=(800, 600))
+    display.start()
+
+
 
 logging.config.fileConfig("logging.conf")
 logger = logging.getLogger(__name__)

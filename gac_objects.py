@@ -3,7 +3,6 @@ import re
 import logging
 import time
 from bs4 import Tag
-
 from datacron_v2 import DatacronV2
 
 logger = logging.getLogger(__name__)
@@ -24,25 +23,21 @@ class GacUnit:
 
         self.base_id = name.attrs['data-base-id']
 
-        # not used really but coded
-        #
-        # statbar = self.unit_element.find(
-        #     class_='gac-unit__bar-inner--prot')
-        # if statbar:
-        #     statbar = statbar.attrs['style']
-        #     matching = re.search('width: (\\d+)%', statbar)
-        #     self.prot = matching.group(1)
-        # else:
-        #     self.prot = -1
+        statbar = self.unit_element.find(class_='gac-unit__bar-inner--prot')
+        if statbar:
+            statbar = statbar.attrs['style']
+            matching = re.search('width: (\\d+)%', statbar)
+            self.prot = int(matching.group(1))
+        else:
+            self.prot = -1
 
-        # statbar = self.unit_element.find_element(
-        #     class_='gac-unit__bar-inner--hp')
-        # if statbar:
-        #     statbar = statbar.atrrs['style']
-        #     matching = re.search('width: (\\d+)%', statbar)
-        #     self.health = matching.group(1)
-        # else:
-        #     self.health = -1
+        statbar = self.unit_element.find(class_='gac-unit__bar-inner--hp')
+        if statbar:
+            statbar = statbar.attrs['style']
+            matching = re.search('width: (\\d+)%', statbar)
+            self.health = int(matching.group(1))
+        else:
+            self.health = -1
 
 
 class GacTeam:
@@ -123,6 +118,16 @@ class GacPlayerBattle:
         self.defender_team = GacTeam(teams[1])
         self.defender_team.reap_team()
 
+    def get_dead_members_ids(self) -> list:
+        the_dead=[]
+        for unit in self.defender_team.members[1:]:
+            if unit.health <= 0:
+                the_dead.append(unit.base_id)
+        return the_dead
+
+    def is_def_leader_alive(self) -> bool:
+        return self.defender_team.members[0].health > 0
+
 
 class GacRound:
     def __init__(self, round_element: Tag, round_data: dict) -> None:
@@ -187,3 +192,23 @@ class GacRound:
             logger.info('reaped 0 battles in %s', str(round(reaping_time, 3)))
 
         return True
+
+    def find_previous_battle(self, cleanup_battle: GacPlayerBattle) -> GacPlayerBattle:
+        for battle in self.battles:
+            if battle.type != 'squad':
+                continue
+
+            is_match = True
+            is_match &= (battle.attempt == cleanup_battle.attempt - 1)
+            is_match &= (len(battle.defender_team.members) ==
+                         len(cleanup_battle.defender_team.members))
+            if is_match:
+                for x in range(0, len(battle.defender_team.members)):
+                    is_match &= (battle.defender_team.members[x].base_id \
+                             == cleanup_battle.defender_team.members[x].base_id)
+            if is_match:
+                logger.debug('found previous battle')
+                return battle
+        logger.error('failed to find previous battle')
+        return False
+

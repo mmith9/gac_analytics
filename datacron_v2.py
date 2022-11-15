@@ -1,7 +1,8 @@
 import json
 import logging
 from sqlite3 import DatabaseError as sqlite_error
-from MySQLdb import DatabaseError as mysql_error
+from mysql.connector import DatabaseError as mysql_error
+
 
 from bs4 import Tag
 

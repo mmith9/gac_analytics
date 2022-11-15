@@ -42,11 +42,11 @@ class SwgohGgScraper:
         self.unit_dict = Dictionary(
             'unit_dict', self.cursor, self.db_connection)
         self.dc_dict = Dictionary(
-            'dc_mechanics_dict',self.cursor, self.db_connection)
+            'dc_mechanics_dict', self.cursor, self.db_connection)
         self.gac_generate_num = gac_num
         self.rate_limiter: throttling.RateLimiter
         self.rate_counter: throttling.RateCounter
-        self.current_gac_num=-1
+        self.current_gac_num = -1
 
     def initialize_chrome(self):
         options = Options()
@@ -62,7 +62,6 @@ class SwgohGgScraper:
         options.add_argument("--disable-software-rasterizer")
         options.add_argument("--disable-gl-drawing-for-tests")
         options.add_argument("--disable-renderer-accessibility")
-        
 
         self.driver = webdriver.Chrome(options=options)
 
@@ -97,7 +96,7 @@ class SwgohGgScraper:
             return False
 
         query = 'insert into local_jobs_completed (allycode, gac_num) '
-        query+= 'values (?, ?)'
+        query += 'values (?, ?)'
         self.cursor.execute(query, (allycode, self.current_gac_num))
         return True
 
@@ -133,66 +132,80 @@ class SwgohGgScraper:
         defender = int(a_round.defender)
         battles_uploaded = 0
         for battle in a_round.battles:
-            if battle.type != 'squad' or battle.attempt!=1:
+            if battle.type != 'squad':
                 continue
-        
+
             if battle.attacker_team.datacron:
-                attacker_dc_id=battle.attacker_team.datacron.\
+                attacker_dc_id = battle.attacker_team.datacron.\
                     save_yourself_to_db(self.cursor, self.dc_dict, 'sqlite')
             else:
-                attacker_dc_id=False
+                attacker_dc_id = False
 
             if battle.defender_team.datacron:
-                defender_dc_id=battle.defender_team.datacron.\
+                defender_dc_id = battle.defender_team.datacron.\
                     save_yourself_to_db(self.cursor, self.dc_dict, 'sqlite')
             else:
-                defender_dc_id=False
+                defender_dc_id = False
 
-            an_insert = [attacker, defender, battle.banners,battle.datetime,\
-                            battle.duration, a_round.gac_num]
+            an_insert = [attacker, defender, battle.banners, battle.datetime,
+                         battle.duration, battle.attempt, a_round.gac_num]
 
             query = 'insert into local_battles '\
-                    '(attacker, defender, banners, bt_date, duration, bt_gac_num, '
+                    '(attacker, defender, banners, bt_date, duration, attempt, bt_gac_num, '
 
             if attacker_dc_id:
-                query+= 'attacker_dc_id, '
+                query += 'attacker_dc_id, '
                 an_insert.append(attacker_dc_id)
             if defender_dc_id:
-                query+= 'defender_dc_id, '
+                query += 'defender_dc_id, '
                 an_insert.append(defender_dc_id)
-            query+='d1,d2,d3,d4,d5,a1,a2,a3,a4,a5'
-            query+=' ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?'
+            query += 'd1,d2,d3,d4,d5,a1,a2,a3,a4,a5'
+            query += ' ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?'
             if attacker_dc_id:
-                query+= ', ?'
+                query += ', ?'
             if defender_dc_id:
-                query+= ', ?'
-            query+=')'
+                query += ', ?'
+            query += ')'
 
-            units = [0 for _i in range(0,10)]
+            units = [0 for _i in range(0, 10)]
 
-            units[0]=self.unit_dict.to_int(battle.defender_team.members[0].base_id)
-            members:GacTeam = sorted(battle.defender_team.members[1:],\
-                        key=lambda unit: self.unit_dict.to_int(unit.base_id))
-            i=1
+            was_def_leader_alive = True
+            dead_members_base_ids = []
+            if battle.attempt > 1:
+                prev_battle = a_round.find_previous_battle(battle)
+                dead_members_base_ids=prev_battle.get_dead_members_ids()
+                was_def_leader_alive = prev_battle.is_def_leader_alive()
+
+            if was_def_leader_alive:
+                units[0] = self.unit_dict.to_int(
+                    battle.defender_team.members[0].base_id)
+            else:
+                units[0] = 0
+
+            members: GacTeam = sorted(battle.defender_team.members[1:],
+                                      key=lambda unit: self.unit_dict.to_int(unit.base_id))
+            i = 1
+            for unit in members:
+                if unit.base_id not in dead_members_base_ids:
+                    unit_id = self.unit_dict.to_int(unit.base_id)
+                    units[i] = unit_id
+                    i += 1
+
+            units[5] = self.unit_dict.to_int(
+                battle.attacker_team.members[0].base_id)
+            members: GacTeam = sorted(battle.attacker_team.members[1:],
+                                      key=lambda unit: self.unit_dict.to_int(unit.base_id))
+            i = 6
             for unit in members:
                 unit_id = self.unit_dict.to_int(unit.base_id)
                 units[i] = unit_id
-                i+=1
+                i += 1
 
-            units[5]=units[0]=self.unit_dict.to_int(battle.attacker_team.members[0].base_id)
-            members:GacTeam = sorted(battle.attacker_team.members[1:],\
-                        key=lambda unit: self.unit_dict.to_int(unit.base_id))
-            i=6
-            for unit in members:
-                unit_id = self.unit_dict.to_int(unit.base_id)
-                units[i] = unit_id
-                i+=1
-
-            an_insert+= units
+            an_insert += units
 
             try:
                 self.cursor.execute(query, an_insert)
-                battles_uploaded+=1
+                battles_uploaded += 1
             except sqlite3.DatabaseError:
                 logger.error('failed to upload battle to db')
                 traceback.print_exc()
@@ -299,7 +312,8 @@ class SwgohGgScraper:
             self.cursor.execute(query, (current_gac_num,))
             rows = self.cursor.fetchall()
         except sqlite3.DatabaseError:
-            logger.error('failed to load snapped allycodes for gac_num %s', current_gac_num)
+            logger.error(
+                'failed to load snapped allycodes for gac_num %s', current_gac_num)
             traceback.print_exc()
             sys.exit(1)
         if not rows:
@@ -325,7 +339,7 @@ class SwgohGgScraper:
 
         self.jobs_to_scrape = []
         for row in rows:
-            job = {'allycode':row[0], 'gac_num':row[1]}
+            job = {'allycode': row[0], 'gac_num': row[1]}
             self.jobs_to_scrape.append(job)
 
     def load_jobs_to_scrape_slave(self):
@@ -343,7 +357,7 @@ class SwgohGgScraper:
 
         self.jobs_to_scrape = []
         for row in rows:
-            job = {'allycode':row[0], 'gac_num':row[1]}
+            job = {'allycode': row[0], 'gac_num': row[1]}
             self.jobs_to_scrape.append(job)
 
     def scrape_leaderboards(self):
@@ -470,7 +484,8 @@ class SwgohGgScraper:
                 round_data['attacker'] = job['allycode']
                 round_outcome = self.scrape_round(round_data)
                 if not round_outcome:
-                    logger.info('%s round %s skipping', job['allycode'], round_num)
+                    logger.info('%s round %s skipping',
+                                job['allycode'], round_num)
                     continue
 
                 if not self.upload_round_to_db(round_outcome):
@@ -566,8 +581,9 @@ class SwgohGgScraper:
         self.cursor.execute(query)
 
         query = 'insert into _job_scan_battles (allycode, gac_num) '
-        query+= 'select distinct ta_allycode, ' + str(self.gac_generate_num) + ' '
-        query+= 'from top_allycodes order by rating desc'
+        query += 'select distinct ta_allycode, ' + \
+            str(self.gac_generate_num) + ' '
+        query += 'from top_allycodes order by rating desc'
 
         self.cursor.execute(query)
         self.db_connection.commit()
@@ -598,7 +614,8 @@ class SwgohGgScraper:
                 round_data['attacker'] = job['allycode']
                 round_outcome = self.scrape_round(round_data)
                 if not round_outcome:
-                    logger.info('%s round %s skipping', job['allycode'], round_num)
+                    logger.info('%s round %s skipping',
+                                job['allycode'], round_num)
                     continue
 
                 if not self.upload_round_to_db_slave(round_outcome):

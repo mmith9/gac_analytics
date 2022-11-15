@@ -172,7 +172,8 @@ class LocalDb:
     def initialize_db(self):
 
         for table in ['local_jobs_completed', 'local_job_scan_battles',
-                      'local_snapped_allycodes', 'local_battles', 'unit_dict', 'datacrons_v2', 'dc_mechanics_dict']:
+                    'local_snapped_allycodes', 'local_battles', 'unit_dict',
+                    'datacrons_v2', 'dc_mechanics_dict']:
             query = 'drop table ' + table
             try:
                 self.cursor.execute(query)
@@ -207,6 +208,7 @@ class LocalDb:
             `banners` tinyint unsigned not null,
             `bt_date` int unsigned not null,
             `duration` smallint unsigned not null,
+            `attempt` tinyint unsigned not null,
             `bt_gac_num` smallint unsigned not null,
             `a1` smallint unsigned not null,
             `a2` smallint unsigned not null,
@@ -237,7 +239,7 @@ class LocalDb:
             )'''
         self.cursor.execute(query)
 
-        dc = DatacronV2()
-        query = dc.get_sql_create_table(dbtype='sqlite')
+        a_dc = DatacronV2()
+        query = a_dc.get_sql_create_table(dbtype='sqlite')
         print(query)
         self.cursor.execute(query)
