@@ -211,15 +211,20 @@ class LocalDb:
             `attempt` tinyint unsigned not null,
             `bt_gac_num` smallint unsigned not null,
             `a1` smallint unsigned not null,
-            `a2` smallint unsigned not null,
-            `a3` smallint unsigned not null,
-            `a4` smallint unsigned not null,
-            `a5` smallint unsigned not null,
-            `d1` smallint unsigned not null,
-            `d2` smallint unsigned not null,
-            `d3` smallint unsigned not null,
-            `d4` smallint unsigned not null,
-            `d5` smallint unsigned not null
+            `a2` smallint unsigned default null,
+            `a3` smallint unsigned default null,
+            `a4` smallint unsigned default null,
+            `a5` smallint unsigned default null,
+            `d1` smallint unsigned default null,
+            `d2` smallint unsigned default null,
+            `d3` smallint unsigned default null,
+            `d4` smallint unsigned default null,
+            `d5` smallint unsigned default null,
+            `d1_hpleft` tinyint unsigned default null,
+            `d2_hpleft` tinyint unsigned default null,
+            `d3_hpleft` tinyint unsigned default null,
+            `d4_hpleft` tinyint unsigned default null,
+            `d5_hpleft` tinyint unsigned default null
             )'''
         self.cursor.execute(query)
 

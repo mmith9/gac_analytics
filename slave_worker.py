@@ -26,16 +26,31 @@ logger = logging.getLogger(__name__)
 def main():
 
     logger.debug('main proc started')
-    gac_num = 118
 
     logger.debug('connecting to sqlite')
     local_db = db_objects.LocalDb()
     local_db.connect('gac_temp_db.sqlite')
 
+    try:
+        query = 'select min(gac_num), max(gac_num) from local_job_scan_battles'
+        local_db.cursor.execute(query)
+        rows = local_db.cursor.fetchall()
+        gac_num = rows[0][0]
+        assert gac_num==rows[0][1]
+        query = 'select count(*) from local_job_scan_battles'
+        local_db.cursor.execute(query)
+        rows = local_db.cursor.fetchall()
+        jobs_number = rows[0][0]
+    except local_db.connection.DatabaseError as err:
+        gac_num = 'undefined'
+        jobs_number = 'undefined'
+        logger.error('%s', err)
+
+
     print(f'Defined now: Gac number {gac_num}')
     print('0 init // clear local db')
     print('1 copy jobs from main db to local')
-    print('2 execute copied')
+    print(f'2 execute copied jobs, {jobs_number} on queue')
 
     task_number = input('Task number?')
 

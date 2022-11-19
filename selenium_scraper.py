@@ -159,36 +159,42 @@ class SwgohGgScraper:
             if defender_dc_id:
                 query += 'defender_dc_id, '
                 an_insert.append(defender_dc_id)
-            query += 'd1,d2,d3,d4,d5,a1,a2,a3,a4,a5'
-            query += ' ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?'
+            query += 'd1, d2, d3, d4, d5, \
+                a1, a2, a3, a4, a5, \
+                d1_hpleft, d2_hpleft, d3_hpleft, d4_hpleft, d5_hpleft'
+            query += ' ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?'
             if attacker_dc_id:
                 query += ', ?'
             if defender_dc_id:
                 query += ', ?'
             query += ')'
 
-            units = [0 for _i in range(0, 10)]
+            units = [None for _i in range(0, 15)]
 
             was_def_leader_alive = True
-            dead_members_base_ids = []
+            previously_dead_members_base_ids = []
             if battle.attempt > 1:
                 prev_battle = a_round.find_previous_battle(battle)
-                dead_members_base_ids=prev_battle.get_dead_members_ids()
+                previously_dead_members_base_ids=prev_battle.get_dead_members_ids()
                 was_def_leader_alive = prev_battle.is_def_leader_alive()
 
             if was_def_leader_alive:
                 units[0] = self.unit_dict.to_int(
                     battle.defender_team.members[0].base_id)
-            else:
-                units[0] = 0
+                leader_hp_left = battle.defender_team.members[0].health
+                if leader_hp_left > 0:
+                    units[0+10] = int(leader_hp_left)
 
             members: GacTeam = sorted(battle.defender_team.members[1:],
                                       key=lambda unit: self.unit_dict.to_int(unit.base_id))
             i = 1
             for unit in members:
-                if unit.base_id not in dead_members_base_ids:
+                if unit.base_id not in previously_dead_members_base_ids:
                     unit_id = self.unit_dict.to_int(unit.base_id)
                     units[i] = unit_id
+                    unit_hp_left = unit.health
+                    if unit_hp_left > 0 :
+                        units[i+10] = int(unit_hp_left)
                     i += 1
 
             units[5] = self.unit_dict.to_int(

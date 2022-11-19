@@ -32,7 +32,7 @@ def main():
 
 
     logger.debug('main proc started')
-    gac_num = 121
+    gac_num = 122
 
     logger.debug('connecting to db')
     my_db = db_objects.MyDb()
