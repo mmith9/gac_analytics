@@ -51,6 +51,7 @@ def main():
     print('0 init // clear local db')
     print('1 copy jobs from main db to local')
     print(f'2 execute copied jobs, {jobs_number} on queue')
+    print('3 pump local data to main db')
 
     task_number = input('Task number?')
 
@@ -65,7 +66,10 @@ def main():
     if task_number == '2':
         selenium_scraper = SwgohGgScraper(local_db, gac_num)
         selenium_scraper.scrape_battles_slave()
-
+    if task_number == '3':
+        my_db = db_objects.MyDb()
+        my_db.connect()
+        local_db.pump_data_to_main_db(my_db)
 
 if __name__ == "__main__":
 

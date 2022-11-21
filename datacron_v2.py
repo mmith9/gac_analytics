@@ -3,7 +3,6 @@ import logging
 from sqlite3 import DatabaseError as sqlite_error
 from mysql.connector import DatabaseError as mysql_error
 
-
 from bs4 import Tag
 
 from gac_dictionaries import DictionaryPlus
@@ -94,7 +93,7 @@ class DatacronV2:
 #        name = self.unit_element.find(class_='character-portrait__img')
 # <div class="datacron-icon datacron-icon--size-sm" data-player-datacron-tooltip-app= JSON DICT
 
-    def save_yourself_to_db(self, cursor,dc_dict:DictionaryPlus ,dbtype):
+    def save_yourself_to_db(self, cursor, dc_dict: DictionaryPlus, dbtype):
         query = 'insert into datacrons_v2 ('
         values = []
         placeholders = ''
@@ -146,12 +145,13 @@ class DatacronV2:
                 query += ' INDEX idx_ab_' + \
                     str(ability)+' (dc_ability_'+str(ability)+'),\n'
             for stat in dcstats.stat_indices:
-                query += ' INDEX idx_st_'+str(stat)+'(dc_stat_'+str(stat)+'),\n'
-        
+                query += ' INDEX idx_st_' + \
+                    str(stat)+'(dc_stat_'+str(stat)+'),\n'
+
         query = query[:-2]
         query += ') '
 
-        if dbtype=='sqlite':
-            query = query.replace('auto_increment','autoincrement')
+        if dbtype == 'sqlite':
+            query = query.replace('auto_increment', 'autoincrement')
 
         return query
