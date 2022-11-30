@@ -154,7 +154,6 @@ class SwgohGgApi:
         self.db_connection.commit()
 
     def scrape_gac_events(self):
-        print('bar')
         query = 'select ge_id, swgohgg_gac_season, swgohgg_gac_num, '
         query+= '    cg_event_id, cg_territory_map_id, cg_base_id '
         query+= 'from gac_events where cg_base_id is null'

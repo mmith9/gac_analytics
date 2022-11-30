@@ -94,7 +94,7 @@ class DatacronV2:
 # <div class="datacron-icon datacron-icon--size-sm" data-player-datacron-tooltip-app= JSON DICT
 
     def save_yourself_to_db(self, cursor, dc_dict: DictionaryPlus, dbtype):
-        query = 'insert into datacrons_v2 ('
+        query = 'insert into datacronsv2 ('
         values = []
         placeholders = ''
         if dbtype == 'mysql':
@@ -130,7 +130,7 @@ class DatacronV2:
         dcstats = AllDatacronStats()
 
         query = '''
-        create table datacrons_v2 (
+        create table datacronsv2 (
             dc_id integer primary key auto_increment,
         '''
         for ability in dcstats.ability_indices:

@@ -29,7 +29,7 @@ def main():
     cursor = localdb.cursor
 
     query = '''
-select *, count(*) cnt from datacrons_v2
+select *, count(*) cnt from datacronsv2
 group by 2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25
 having cnt>1
 '''
@@ -42,7 +42,7 @@ having cnt>1
     for row in rows:
         print('\r left: ', dupecount,'  ', end='')
         dupecount-=1
-        query = 'select * from datacrons_v2 where \n'
+        query = 'select * from datacronsv2 where \n'
         index=1
         for ability in abilities:
             query+=' dc_ability_'+str(ability)
@@ -88,7 +88,7 @@ having cnt>1
                     where defender_dc_id = ?'
 #            print(query)                    
             cursor.execute(query, (orig_id, dupe_id))
-            query='delete from datacrons_v2 where dc_id = ?'
+            query='delete from datacronsv2 where dc_id = ?'
 #            print(query)
             cursor.execute(query, (dupe_id,))
         localdb.connection.commit()

@@ -178,14 +178,18 @@ class LocalDb:
         a_dc = DatacronV2Db()
         a_battle = GacPlayerBattleDb()
 
-        query = 'select * from local_battles'
-        self.cursor.execute(query)
+        #query = 'select * from local_battles'
+        self.cursor.execute(a_battle.sqlite_select_all_query)
         battle_rows = self.cursor.fetchall()
 
+        battle_count = len(battle_rows)
+        update_count = 0
+        print()
+
         for battle_row in battle_rows:
-            attacker_dc_id = battle_row[1]
-            defender_dc_id = battle_row[2]
-            a_battle.db_row = list(battle_row[1:])
+            attacker_dc_id = battle_row[0]
+            defender_dc_id = battle_row[1]
+            a_battle.db_row = list(battle_row)
 
             if attacker_dc_id:
                 a_dc.load_self_from_db(attacker_dc_id, self.cursor, 'sqlite')
@@ -206,7 +210,10 @@ class LocalDb:
             logger.debug('pumping to db values %s', a_battle.db_row)
             a_battle.insert_self_to_db(my_db.cursor, 'mysql')
             my_db.connection.commit()
-
+            update_count+= 1
+            if (update_count % 100) == 0:
+                print(round(100*update_count/battle_count, 2), '% of',battle_count,'done   ', end='\r')
+        print()
 
     def initialize_db(self):
 
@@ -322,7 +329,7 @@ class DatacronV2Db:
         return
 
     def load_self_from_db(self, dc_id: int, cursor, dbtype: str) -> bool:
-        query = 'select * from datacrons_v2 where dc_id='
+        query = 'select * from datacronsv2 where dc_id='
         if dbtype == 'mysql':
             query += '%s'
         elif dbtype == 'sqlite':
@@ -419,6 +426,7 @@ class GacPlayerBattleDb:
         self.db_row: list
         self.mysql_insert_query: str
         self.mysql_create_table: str
+        self.sqlite_select_all_query: str
         self.construct_queries()
 
     def construct_queries(self):
@@ -477,21 +485,26 @@ index idx_b5(b5)
             'd1_hpleft', 'd2_hpleft', 'd3_hpleft', 'd4_hpleft', 'd5_hpleft'
         ]
 
-        query = 'insert into battlesv2 ('
+
+        i_query = 'insert into battlesv2 ('
         values = ''
+        s_query = 'select '
         for col in battle_columns:
-            query += col + ', '
+            i_query += col + ', '
             values += '%s, '
-        query = query[:-2]
+            s_query += col + ', '
+        i_query = i_query[:-2] #cut last coma
         values = values[:-2]
+        s_query = s_query[:-2]
 
-        query += ') values ('
-        query += values + ')'
-
-        self.mysql_insert_query = query
-
+        i_query += ') values ('
+        i_query += values + ')'
+        s_query += ' from local_battles'
+ 
+        self.mysql_insert_query = i_query
         logger.debug('mysql_insert_query: %s', self.mysql_insert_query)
-
+        self.sqlite_select_all_query = s_query
+        logger.debug('sqlite_select_all_query: %s', self.sqlite_select_all_query)
         return
 
     def insert_self_to_db(self, cursor, dbtype: str) -> bool:

@@ -83,7 +83,7 @@ def main():
         selenium_scraper.scrape_battles()
 
     if task_number == '0':
-        print('foo')
+        logger.debug('scraping gac events')
         api_scraper = SwgohGgApi(my_db, gac_num)
         api_scraper.scrape_gac_events()
 
